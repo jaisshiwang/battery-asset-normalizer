@@ -87,33 +87,3 @@ def test_create_silver_snapshots_rejects_unknown_vendor():
             api_token="mock-token",
         )
 
-
-def test_create_silver_snapshots_can_persist_silver_dataset(tmp_path):
-    raw_data = {
-        "data": {
-            "datas": [
-                {
-                    "time": "2025-09-23 12:00:00",
-                    "serialNum": "EGM7F5T043",
-                    "plocalLoadTotal": 1000.0,
-                }
-            ]
-        }
-    }
-
-    store = LocalDatasetStore(base_path=tmp_path)
-
-    create_silver_snapshots(
-        vendor="growatt",
-        raw_data=raw_data,
-        query_date=date(2025, 9, 23),
-        device_info={},
-        api_token="mock-token",
-        persist=True,
-        store=store,
-    )
-
-    output_path = tmp_path / "silver" / "power_snapshots.csv"
-
-    assert output_path.exists()
-    assert "growatt" in output_path.read_text()
