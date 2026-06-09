@@ -1,140 +1,113 @@
 # Battery Asset Normalizer
 
-A vendor-agnostic Python package for normalising battery telemetry from multiple manufacturers into a common energy model.
+A lightweight Python package for normalising battery telemetry from different manufacturers into a common power and energy model.
+
+This package exposes a vendor-independent public interface through `run_pipeline()`, allowing callers to retrieve normalised energy intervals without needing to understand vendor-specific payload structures.
 
 The package currently supports:
 
 - Fox ESS
 - Growatt SPH devices
 
-The goal is to provide a single, consistent interface for converting vendor-specific power telemetry into standardised energy datasets suitable for optimisation, analytics and reporting.
+It converts vendor-specific power snapshot data into:
+
+1. A unified Silver `PowerSnapshot` dataset.
+2. A Gold `EnergyInterval` dataset containing estimated kWh values for clock-aligned periods.
 
 ---
 
-## Problem Statement
+## Problem
 
 Battery manufacturers expose different APIs and data schemas.
 
-Fox ESS and Growatt both provide power flow snapshots, but:
+Fox ESS and Growatt both provide power-flow snapshots, but:
 
-- The payload structures are different.
-- The naming conventions are different.
-- The units are different.
-- Snapshot timestamps occur at irregular intervals.
+- Their JSON structures are different.
+- Their field names are different.
+- Their units are different.
+- Their snapshots arrive at irregular intervals.
 
-This package normalises vendor-specific payloads into a common schema and converts irregular power snapshots into clock-aligned energy intervals.
+This package hides those vendor differences behind a common interface.
 
 ---
 
 ## Architecture
 
-The solution follows a lightweight medallion-inspired architecture.
+The project follows a lightweight medallion-inspired flow:
 
 ```text
-FOX ESS JSON
-      │
-      ▼
-GROWATT JSON
-      │
-      ▼
-BRONZE
-Raw Vendor Payloads
-      │
-      ▼
-PARSERS
-      │
-      ▼
-SILVER
-PowerSnapshot Dataset
-      │
-      ▼
-RESAMPLING ENGINE
-      │
-      ▼
-GOLD
-EnergyInterval Dataset
+Bronze
+Raw vendor JSON payloads
+        ↓
+Parsers
+Vendor-specific mapping logic
+        ↓
+Silver
+Normalised PowerSnapshot records in kW
+        ↓
+Resampling
+Irregular power snapshots converted into fixed intervals
+        ↓
+Gold
+EnergyInterval records in kWh
 ```
-
-### Bronze Layer
-
-Raw vendor API payloads.
-
-For this exercise, API responses are mocked using the supplied JSON files.
-
-Examples:
-
-- Fox ESS historical power response
-- Growatt SPH historical power response
-
-### Silver Layer
-
-Normalised power telemetry.
-
-All vendor-specific fields are converted into a common schema:
-
-| Column | Description |
-|----------|----------|
-| vendor | Manufacturer |
-| query_date | Requested date |
-| device_id | Device identifier |
-| timestamp | Snapshot timestamp |
-| load_kw | Site load power |
-| solar_pv_kw | Solar generation power |
-| battery_kw | Positive = charging, Negative = discharging |
-| grid_kw | Positive = import, Negative = export |
-
-### Gold Layer
-
-Clock-aligned energy intervals.
-
-Power snapshots are converted into estimated energy usage for fixed periods.
-
-Default interval:
-
-- 30 minutes
-
-Output schema:
-
-| Column | Description |
-|----------|----------|
-| vendor | Manufacturer |
-| query_date | Requested date |
-| device_id | Device identifier |
-| period_start | Start of interval |
-| period_end | End of interval |
-| load_kwh | Load energy |
-| solar_pv_kwh | Solar energy |
-| battery_kwh | Battery energy |
-| grid_kwh | Grid energy |
 
 ---
 
-## Project Structure
+## Data Layers
+
+### Bronze
+
+Raw vendor API responses.
+
+For this exercise, the HTTP/API layer is mocked using the supplied JSON files in `tests/fixtures`.
+
+### Silver
+
+A unified power snapshot dataset.
+
+Output file:
 
 ```text
-battery-asset-normalizer/
-│
-├── data/
-│   ├── bronze/
-│   ├── silver/
-│   └── gold/
-│
-├── src/
-│   └── battery_asset_normalizer/
-│       ├── models.py
-│       ├── pipeline.py
-│       ├── storage.py
-│       ├── resampling.py
-│       │
-│       └── parsers/
-│           ├── foxess.py
-│           └── growatt.py
-│
-├── tests/
-│
-├── README.md
-└── pyproject.toml
+data/silver/power_snapshots.csv
 ```
+
+Schema:
+
+| Column | Description |
+|---|---|
+| vendor | Vendor name |
+| query_date | Date requested |
+| timestamp | Snapshot timestamp |
+| load_kw | Load power in kW |
+| solar_pv_kw | Solar generation in kW |
+| battery_kw | Positive = charging, negative = discharging |
+| grid_kw | Positive = importing, negative = exporting |
+| device_id | Optional device or asset identifier |
+
+### Gold
+
+A unified energy interval dataset.
+
+Output file:
+
+```text
+data/gold/energy_intervals.csv
+```
+
+Schema:
+
+| Column | Description |
+|---|---|
+| vendor | Vendor name |
+| query_date | Date requested |
+| period_start | Interval start |
+| period_end | Interval end |
+| load_kwh | Load energy in kWh |
+| solar_pv_kwh | Solar energy in kWh |
+| battery_kwh | Positive = charged energy, negative = discharged energy |
+| grid_kwh | Positive = imported energy, negative = exported energy |
+| device_id | Optional device or asset identifier |
 
 ---
 
@@ -142,7 +115,9 @@ battery-asset-normalizer/
 
 ### Fox ESS
 
-The following fields are normalised:
+Fox ESS returns channel-based time series.
+
+Mappings:
 
 ```text
 load_kw      = loadsPower
@@ -151,40 +126,40 @@ battery_kw   = batChargePower - batDischargePower
 grid_kw      = gridConsumptionPower - feedinPower
 ```
 
-Fox ESS values are already provided in kW.
+Fox ESS values are already reported in kW.
 
 ### Growatt SPH
 
-The following fields are normalised:
+Growatt returns row-based snapshots.
+
+Mappings:
 
 ```text
-load_kw      = plocalLoadTotal
-solar_pv_kw  = ppv
-battery_kw   = pcharge1 - pdischarge1
-grid_kw      = pacToUserTotal - pacToGridTotal
+load_kw      = plocalLoadTotal / 1000
+solar_pv_kw  = ppv / 1000
+battery_kw   = (pcharge1 - pdischarge1) / 1000
+grid_kw      = (pacToUserTotal - pacToGridTotal) / 1000
 ```
 
-Growatt values are converted from W to kW during normalisation.
+Growatt values are converted from W to kW.
 
 ---
 
 ## Power to Energy Conversion
 
-Power snapshots are recorded at irregular intervals.
-
-Energy is calculated using:
+Power is converted to energy using:
 
 ```text
-Energy (kWh) = Power (kW) × Time (hours)
+Energy (kWh) = Power (kW) × Duration (hours)
 ```
 
-The implementation assumes a step-function model where each power value applies until the next available snapshot.
+The resampling engine assumes each power snapshot is valid until the next timestamp.
 
-Energy contributions are then prorated into fixed 30-minute intervals.
+The final snapshot is not extrapolated because there is no following reading to define its duration.
 
 ---
 
-## Running the Project
+## Installation
 
 Create a virtual environment:
 
@@ -193,13 +168,21 @@ python -m venv .venv
 source .venv/bin/activate
 ```
 
-Install dependencies:
+Install the package:
 
 ```bash
 pip install -e ".[dev]"
 ```
 
-Run tests:
+## Verify Installation
+
+```bash
+python -c "from battery_asset_normalizer import run_pipeline; print('ok')"
+```
+
+---
+
+## Running Tests
 
 ```bash
 pytest
@@ -207,23 +190,108 @@ pytest
 
 ---
 
+## Public API
+
+```python
+from datetime import date
+
+from battery_asset_normalizer import run_pipeline
+
+intervals = run_pipeline(
+    vendor="growatt",
+    query_date=date(2025, 9, 23),
+    device_info={},
+    api_token="mock-token",
+)
+
+print(len(intervals))
+```
+
+---
+
+## Generate Silver Dataset
+
+```bash
+python scripts/run_silver.py
+```
+
+This writes:
+
+```text
+data/silver/power_snapshots.csv
+```
+
+---
+
+## Generate Silver and Gold Datasets
+
+```bash
+python scripts/run_gold.py
+```
+
+This writes:
+
+```text
+data/silver/power_snapshots.csv
+data/gold/energy_intervals.csv
+```
+
+---
+
+## Bonus: 5-Minute Resampling
+
+```python
+from datetime import date
+
+from battery_asset_normalizer import run_pipeline
+
+intervals = run_pipeline(
+    vendor="foxess",
+    query_date=date(2025, 10, 2),
+    device_info={"device_id": "foxess-sample-device"},
+    api_token="mock-token",
+    interval_minutes=5,
+)
+```
+
+---
+
+## Example Usage
+
+```python
+from datetime import date
+
+from battery_asset_normalizer import run_pipeline
+
+intervals = run_pipeline(
+    vendor="foxess",
+    query_date=date(2025, 10, 2),
+    device_info={"device_id": "foxess-sample-device"},
+    api_token="mock-token",
+)
+
+print(intervals[0])
+```
+
+---
+
 ## Assumptions
 
-- Fox ESS values are reported in kW.
-- Growatt SPH values are reported in W and converted to kW.
-- Battery power is positive when charging and negative when discharging.
-- Grid power is positive when importing and negative when exporting.
-- Snapshot values are treated as step functions until the next reading.
-- No energy is inferred before the first available snapshot.
-- No energy is extrapolated beyond the final available snapshot.
+- Fox ESS values are already in kW.
+- Growatt SPH values are in W and are converted to kW.
+- Battery values are positive when charging and negative when discharging.
+- Grid values are positive when importing and negative when exporting.
+- Snapshot values are treated as step functions.
+- No energy is inferred before the first snapshot.
+- The final snapshot is not extrapolated.
+- CSV is used to keep the package lightweight and dependency-free.
 
 ---
 
 ## Future Enhancements
 
-- Support additional battery vendors.
-- Optional persistence to Parquet or Delta Lake.
-- 5-minute interval resampling.
-- API-backed ingestion clients.
-- Data quality validation and anomaly detection.
-- Forecast and optimisation integration.
+- Add live API-backed clients.
+- Add validation for missing or inconsistent vendor fields.
+- Add Parquet or Delta persistence for production-scale use.
+- Add additional vendors.
+- Add richer data quality reporting.
