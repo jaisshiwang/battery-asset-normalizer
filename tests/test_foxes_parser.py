@@ -2,7 +2,7 @@ import json
 from datetime import date
 from pathlib import Path
 
-from battery_asset_normalizer.parsers.foxes import parse_foxess
+from battery_asset_normalizer.parsers.foxess import parse_foxess
 from battery_asset_normalizer.models import PowerSnapshot
 
 
