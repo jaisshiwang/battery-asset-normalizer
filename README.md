@@ -288,6 +288,14 @@ print(intervals[0])
 
 ---
 
+## Assessment Coverage
+
+- **Abstraction and extensibility:** Vendor-specific logic is isolated in `parsers/`. New vendors can be added by implementing a new parser that returns `PowerSnapshot` records.
+- **Power-to-energy correctness:** Irregular snapshots are treated as step functions and converted using `kWh = kW × hours`. Partial overlaps across 30-minute buckets are prorated.
+- **Testing:** Tests cover vendor parsing, unit conversion, sign conventions, 30-minute and 5-minute resampling, final snapshot handling, storage, and end-to-end flow.
+- **Developer experience:** The package can be installed with `pip install -e ".[dev]"`, tested with `pytest`, and run through `run_pipeline()` or the scripts.
+
+---
 ## Future Enhancements
 
 - Add live API-backed clients.
