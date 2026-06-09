@@ -25,6 +25,8 @@ def test_write_silver_dataset(tmp_path):
     assert output_path.exists()
 
     content = output_path.read_text()
+
     assert "vendor,query_date,timestamp,load_kw,solar_pv_kw,battery_kw,grid_kw,device_id" in content
     assert "foxess" in content
     assert "2025-10-02" in content
+    assert "fox-device-1" in content

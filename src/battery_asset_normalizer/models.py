@@ -8,7 +8,7 @@ class PowerSnapshot:
     """
     Silver layer representation.
 
-    A normalized power reading at a specific timestamp.
+    A normalised power reading at a specific timestamp.
     All power values are stored in kW.
     """
 
